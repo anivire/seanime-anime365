@@ -110,7 +110,7 @@ class Provider {
       if (!embed) return
       const author = t.authorsSummary || t.title || t.type
       const subtitles: VideoSubtitle[] = embed.subtitlesUrl
-        ? [{id: String(t.id), url: absoluteUrl(embed.subtitlesUrl), language: 'ru', isDefault: true}]
+        ? [{id: String(t.id), url: absoluteUrl(embed.subtitlesUrl).replace(/\?willcache$/, ''), language: 'ru', isDefault: true}]
         : []
       const options = [
         ...(Array.isArray(embed.stream) ? embed.stream : []).map(o => ({height: o.height, url: Array.isArray(o.urls) ? o.urls.find(isHttps) : undefined})),
@@ -130,8 +130,6 @@ class Provider {
       }
     })
     if (!sources.length) throw new Error('Anime365 returned no compatible direct MP4/HLS links for ' + server + '.')
-    // Video CDN allows CORS, but .ass subtitles don't; non-empty headers make Seanime proxy both.
-    const headers: Record<string, string> = sources.some(s => s.subtitles.length) ? {Referer: BASE + '/'} : {}
-    return {server, headers, videoSources: sources}
+    return {server, headers: {}, videoSources: sources}
   }
 }

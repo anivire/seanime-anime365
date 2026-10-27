@@ -43,4 +43,4 @@ The token never expires and only stops working when you change your password. Ke
 
 Pick the server from the dropdown next to the provider; Seanime remembers your choice. Each translation shows up as its own entry in the quality list, e.g. `1080p · Crunchyroll`. The order follows Anime365's own ranking, and the top translation in 1080p plays by default. Each server loads at most 15 translations.
 
-The video CDN allows CORS, the subtitle files don't. So whenever a translation has subtitles, both video and subtitles go through Seanime's proxy, which means through your server.
+Video streams load directly. Seanime downloads subtitle files on the server for its player, so the extension does not need to proxy them with the video.
