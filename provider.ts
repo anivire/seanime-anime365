@@ -51,19 +51,22 @@ class Provider {
           embed = await this.api('/translations/embed/' + t.id, {access_token: token})
       } catch (err) { continue }
       const author = t.authorsSummary || t.title || t.type
+      const rawSub = typeof embed.subtitlesUrl === 'string' ? embed.subtitlesUrl : ''
+      const subUrl = !rawSub ? '' : /^https?:\/\//.test(rawSub) ? rawSub : rawSub.startsWith('//') ? 'https:' + rawSub : BASE + (rawSub.startsWith('/') ? '' : '/') + rawSub
+      const subtitles: VideoSubtitle[] = subUrl ? [{id: String(t.id), url: subUrl, language: 'ru', isDefault: true}] : []
       for (const option of Array.isArray(embed.stream) ? embed.stream : []) {
         for (const [index, url] of (Array.isArray(option.urls) ? option.urls : []).entries()) {
           if (typeof url !== 'string' || !/^https:\/\//.test(url)) continue
-          const type = url.split('?')[0].toLowerCase().endsWith('.mp4') ? 'mp4' : 'm3u8'
-          sources.push({url, type, quality: option.height + 'p · ' + author + ' · ' + (index + 1), label: author, subtitles: []})
+          const type = /\.m3u8($|[?#])/i.test(url) ? 'm3u8' : 'mp4'
+          sources.push({url, type, quality: option.height + 'p · ' + author + ' · ' + (index + 1), label: author, subtitles})
         }
       }
       for (const option of Array.isArray(embed.download) ? embed.download : []) {
         if (typeof option.url !== 'string' || !/^https:\/\//.test(option.url)) continue
-        sources.push({url: option.url, type: 'mp4', quality: option.height + 'p · ' + author + ' · download', label: author, subtitles: []})
+        sources.push({url: option.url, type: 'mp4', quality: option.height + 'p · ' + author + ' · download', label: author, subtitles})
       }
     }
     if (!sources.length) throw new Error('Anime365 returned no compatible direct MP4/HLS links. The embed response needs mapping; see README.')
-    return {server: SERVER, headers: {Referer: BASE + '/'}, videoSources: sources}
+    return {server: SERVER, headers: {}, videoSources: sources}
   }
 }
