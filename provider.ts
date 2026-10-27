@@ -1,28 +1,69 @@
+/// <reference path="./onlinestream-provider.d.ts" />
+
 const BASE = 'https://smotret-anime.app'
 const API = BASE + '/api'
-const SERVER = 'Anime365 (RU)'
+// The first server is Seanime's default; it remembers the user's last choice.
+const SERVER_TYPES: Record<string, string> = {'Русские субтитры': 'subRu', 'Русская озвучка': 'voiceRu'}
+const MAX_TRANSLATIONS = 15
+
+// Anime365 API responses (https://smotret-anime.app/api-docs), only the fields used here.
+
+interface A365Series {
+  id: number
+  isHentai?: number
+  typeTitle?: string
+  titles?: {romaji?: string, en?: string, ru?: string, ja?: string}
+}
+
+interface A365Episode {
+  id: number
+  episodeInt: number | string
+  episodeTitle?: string
+}
+
+interface A365Translation {
+  id: number
+  type: string // subRu, voiceRu, subEn, voiceEn, raw, ...
+  priority?: number
+  title?: string
+  authorsSummary?: string
+}
+
+interface A365Embed {
+  stream?: {height: number, urls?: string[]}[]
+  download?: {height: number, url?: string}[]
+  subtitlesUrl?: string
+}
+
+const isHttps = (url: unknown): url is string => typeof url === 'string' && /^https:\/\//.test(url)
+
+function absoluteUrl(url: string): string {
+  if (/^https?:\/\//.test(url)) return url
+  if (url.startsWith('//')) return 'https:' + url
+  return BASE + (url.startsWith('/') ? '' : '/') + url
+}
 
 class Provider {
   getSettings(): Settings {
-    return { episodeServers: [SERVER], supportsDub: true }
+    return {episodeServers: Object.keys(SERVER_TYPES), supportsDub: false}
   }
 
-  private async api(path: string, params: Record<string, string> = {}): Promise<any> {
+  private async api<T>(path: string, params: Record<string, string> = {}): Promise<T> {
     const pairs = Object.keys(params).map(k => encodeURIComponent(k) + '=' + encodeURIComponent(params[k]))
     const url = API + path + (pairs.length ? '?' + pairs.join('&') : '')
     const res = await fetch(url, {headers: {'Accept': 'application/json', 'User-Agent': 'Seanime-Anime365/0.1'}})
     if (!res.ok) throw new Error('Anime365 HTTP ' + res.status + ' (' + path + ')')
-    const obj = JSON.parse(await res.text())
+    const obj: {data?: T, error?: {code?: number, message?: string}} = JSON.parse(await res.text())
     if (obj.error) throw new Error('Anime365: ' + (obj.error.message || JSON.stringify(obj.error)))
-    return obj.data
+    return obj.data as T
   }
 
   async search(opts: SearchOptions): Promise<SearchResult[]> {
     const q = (opts.query || '').trim()
     if (q.length < 2) return []
-    const series = await this.api('/series', {query: q, limit: '30', isActive: '1'})
+    const series = await this.api<A365Series[]>('/series', {query: q, limit: '30', isActive: '1'})
     if (!Array.isArray(series)) return []
-    return series.filter((s: any) => !s.isHentai || opts.media.isAdult).map((s: any) => ({
+    return series.filter(s => !s.isHentai || opts.media.isAdult).map(s => ({
       id: String(s.id),
       title: (s.titles && (s.titles.romaji || s.titles.en || s.titles.ru || s.titles.ja)) || s.typeTitle || q,
       url: BASE + '/catalog/anime/' + s.id,
@@ -31,42 +72,56 @@ class Provider {
   }
 
   async findEpisodes(id: string): Promise<EpisodeDetails[]> {
-    const rows = await this.api('/episodes', {seriesId: id, isActive: '1', limit: '1000'})
+    const rows = await this.api<A365Episode[]>('/episodes', {seriesId: id, isActive: '1', limit: '1000'})
     if (!Array.isArray(rows)) return []
-    return rows.filter((e: any) => Number.isInteger(Number(e.episodeInt)) && Number(e.episodeInt) > 0)
-      .map((e: any) => ({id: String(e.id), number: Number(e.episodeInt), title: e.episodeTitle || ('Серия ' + e.episodeInt), url: BASE + '/episodes/' + e.id}))
-      .sort((a: EpisodeDetails, b: EpisodeDetails) => a.number - b.number)
+    return rows.filter(e => Number.isInteger(Number(e.episodeInt)) && Number(e.episodeInt) > 0)
+      .map(e => ({id: String(e.id), number: Number(e.episodeInt), title: e.episodeTitle || ('Серия ' + e.episodeInt), url: BASE + '/episodes/' + e.id}))
+      .sort((a, b) => a.number - b.number)
   }
 
   async findEpisodeServer(episode: EpisodeDetails, server: string): Promise<EpisodeServer> {
     const token = $getUserPreference('apiToken')
     if (!token) throw new Error('Set Anime365 API Token in the extension settings.')
-    const translations = await this.api('/translations', {episodeId: episode.id, isActive: '1', limit: '100'})
-    if (!Array.isArray(translations) || !translations.length) throw new Error('No Anime365 translations for episode ' + episode.id)
+    const wanted = SERVER_TYPES[server]
+    if (!wanted) throw new Error('Unknown Anime365 server: ' + server)
+    const translations = await this.api<A365Translation[]>('/translations', {episodeId: episode.id, isActive: '1', limit: '100'})
+    const picked = (Array.isArray(translations) ? translations : [])
+      .filter(t => t.type === wanted)
+      .sort((a, b) => (Number(b.priority) || 0) - (Number(a.priority) || 0))
+      .slice(0, MAX_TRANSLATIONS)
+    if (!picked.length) throw new Error('No Anime365 ' + wanted + ' translations for episode ' + episode.id)
+    // Fetch embeds in parallel, then keep Anime365's priority order so the best translation is the default.
+    const embeds = await Promise.all(picked.map(t =>
+      this.api<A365Embed>('/translations/embed/' + t.id, {access_token: token}).catch(() => null)))
     const sources: VideoSource[] = []
-    for (const t of translations) {
-      if (!['voiceRu','subRu'].includes(t.type)) continue
-      let embed: any
-      try {
-          embed = await this.api('/translations/embed/' + t.id, {access_token: token})
-      } catch (err) { continue }
+    const usedQualities: Record<string, boolean> = {}
+    picked.forEach((t, i) => {
+      const embed = embeds[i]
+      if (!embed) return
       const author = t.authorsSummary || t.title || t.type
-      const rawSub = typeof embed.subtitlesUrl === 'string' ? embed.subtitlesUrl : ''
-      const subUrl = !rawSub ? '' : /^https?:\/\//.test(rawSub) ? rawSub : rawSub.startsWith('//') ? 'https:' + rawSub : BASE + (rawSub.startsWith('/') ? '' : '/') + rawSub
-      const subtitles: VideoSubtitle[] = subUrl ? [{id: String(t.id), url: subUrl, language: 'ru', isDefault: true}] : []
-      for (const option of Array.isArray(embed.stream) ? embed.stream : []) {
-        for (const [index, url] of (Array.isArray(option.urls) ? option.urls : []).entries()) {
-          if (typeof url !== 'string' || !/^https:\/\//.test(url)) continue
-          const type = /\.m3u8($|[?#])/i.test(url) ? 'm3u8' : 'mp4'
-          sources.push({url, type, quality: option.height + 'p · ' + author + ' · ' + (index + 1), label: author, subtitles})
-        }
+      const subtitles: VideoSubtitle[] = embed.subtitlesUrl
+        ? [{id: String(t.id), url: absoluteUrl(embed.subtitlesUrl), language: 'ru', isDefault: true}]
+        : []
+      const options = [
+        ...(Array.isArray(embed.stream) ? embed.stream : []).map(o => ({height: o.height, url: Array.isArray(o.urls) ? o.urls.find(isHttps) : undefined})),
+        ...(Array.isArray(embed.download) ? embed.download : []).map(o => ({height: o.height, url: o.url})),
+      ].filter((o): o is {height: number, url: string} => isHttps(o.url))
+        .sort((a, b) => (Number(b.height) || 0) - (Number(a.height) || 0))
+      // Stream mirrors and download links are the same file, so keep one link per resolution.
+      const usedHeights: Record<string, boolean> = {}
+      for (const o of options) {
+        if (usedHeights[o.height]) continue
+        usedHeights[o.height] = true
+        let quality = o.height + 'p · ' + author
+        if (usedQualities[quality]) quality += ' #' + t.id
+        usedQualities[quality] = true
+        const type: VideoSourceType = /\.m3u8($|[?#])/i.test(o.url) ? 'm3u8' : 'mp4'
+        sources.push({url: o.url, type, quality, label: author, subtitles})
       }
-      for (const option of Array.isArray(embed.download) ? embed.download : []) {
-        if (typeof option.url !== 'string' || !/^https:\/\//.test(option.url)) continue
-        sources.push({url: option.url, type: 'mp4', quality: option.height + 'p · ' + author + ' · download', label: author, subtitles})
-      }
-    }
-    if (!sources.length) throw new Error('Anime365 returned no compatible direct MP4/HLS links. The embed response needs mapping; see README.')
-    return {server: SERVER, headers: {}, videoSources: sources}
+    })
+    if (!sources.length) throw new Error('Anime365 returned no compatible direct MP4/HLS links for ' + server + '.')
+    // Video CDN allows CORS, but .ass subtitles don't; non-empty headers make Seanime proxy both.
+    const headers: Record<string, string> = sources.some(s => s.subtitles.length) ? {Referer: BASE + '/'} : {}
+    return {server, headers, videoSources: sources}
   }
 }
