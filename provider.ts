@@ -5,6 +5,7 @@ const API = BASE + '/api'
 // The first server is Seanime's default; it remembers the user's last choice.
 const SERVER_TYPES: Record<string, string> = {'Русские субтитры': 'subRu', 'Русская озвучка': 'voiceRu'}
 const MAX_TRANSLATIONS = 15
+const MAIN_EPISODE_TYPES = ['tv', 'ova', 'ona', 'movie']
 
 // Anime365 API responses (https://smotret-anime.app/api-docs), only the fields used here.
 
@@ -18,6 +19,7 @@ interface A365Series {
 interface A365Episode {
   id: number
   episodeInt: number | string
+  episodeType?: string // tv, ova, ona, movie, preview, special, tv_special, opening, ending, menu, bonus, other
   episodeTitle?: string
 }
 
@@ -74,7 +76,15 @@ class Provider {
   async findEpisodes(id: string): Promise<EpisodeDetails[]> {
     const rows = await this.api<A365Episode[]>('/episodes', {seriesId: id, isActive: '1', limit: '1000'})
     if (!Array.isArray(rows)) return []
-    return rows.filter(e => Number.isInteger(Number(e.episodeInt)) && Number(e.episodeInt) > 0)
+    const numbered = rows.filter(e => Number.isInteger(Number(e.episodeInt)) && Number(e.episodeInt) > 0)
+    // Trailers, openings, specials etc. reuse numbers of real episodes ("Трейлер" is episode 1).
+    // Keep them only for entries that have nothing else, e.g. a series made of specials.
+    const main = numbered.filter(e => MAIN_EPISODE_TYPES.includes(e.episodeType || ''))
+    const byNumber: Record<number, A365Episode> = {}
+    for (const e of (main.length ? main : numbered).sort((a, b) => a.id - b.id)) {
+      if (!byNumber[Number(e.episodeInt)]) byNumber[Number(e.episodeInt)] = e
+    }
+    return Object.values(byNumber)
       .map(e => ({id: String(e.id), number: Number(e.episodeInt), title: e.episodeTitle || ('Серия ' + e.episodeInt), url: BASE + '/episodes/' + e.id}))
       .sort((a, b) => a.number - b.number)
   }

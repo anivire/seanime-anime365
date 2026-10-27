@@ -1,7 +1,7 @@
 {
   "id": "anime365",
   "name": "Anime365",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "icon": "https://raw.githubusercontent.com/anivire/seanime-anime365/main/icon.png",
   "manifestURI": "https://raw.githubusercontent.com/anivire/seanime-anime365/main/manifest.json",
   "language": "typescript",
