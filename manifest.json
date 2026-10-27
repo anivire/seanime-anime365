@@ -1,8 +1,8 @@
 {
   "id": "anime365",
   "name": "Anime365",
-  "version": "0.1.3",
-  "icon": "https://smotret-anime.app/apple-touch-icon.png",
+  "version": "0.1.4",
+  "icon": "https://raw.githubusercontent.com/anivire/seanime-anime365/main/icon.png",
   "manifestURI": "https://raw.githubusercontent.com/anivire/seanime-anime365/main/manifest.json",
   "language": "typescript",
   "type": "onlinestream-provider",
