@@ -1,0 +1,25 @@
+{
+  "id": "anime365-experimental",
+  "name": "Anime365 (RU) - Experimental",
+  "version": "0.1.1",
+  "manifestURI": "https://YOUR_HOST/manifest.json",
+  "language": "typescript",
+  "type": "onlinestream-provider",
+  "description": "Experimental Anime365 online streaming provider for Seanime; requires an authorized subscription token.",
+  "author": "Community prototype",
+  "website": "https://smotret-anime.app/",
+  "lang": "ru",
+  "payloadURI": "https://YOUR_HOST/provider.ts",
+  "userConfig": {
+    "requiresConfig": true,
+    "version": 1,
+    "fields": [
+      {
+        "name": "apiToken",
+        "label": "Anime365 API Token",
+        "type": "text",
+        "default": ""
+      }
+    ]
+  }
+}
