@@ -51,21 +51,16 @@ class Provider {
           embed = await this.api('/translations/embed/' + t.id, {access_token: token})
       } catch (err) { continue }
       const author = t.authorsSummary || t.title || t.type
-      // API embed schema is intentionally permissive; only direct media URLs are accepted.
-      const entries: any[] = []
-      for (const k of ['streams','streamUrls','downloads','downloadUrls','videos','urls','videoUrls']) {
-        if (Array.isArray(embed[k])) entries.push(...embed[k])
+      for (const option of Array.isArray(embed.stream) ? embed.stream : []) {
+        for (const [index, url] of (Array.isArray(option.urls) ? option.urls : []).entries()) {
+          if (typeof url !== 'string' || !/^https:\/\//.test(url)) continue
+          const type = url.split('?')[0].toLowerCase().endsWith('.mp4') ? 'mp4' : 'm3u8'
+          sources.push({url, type, quality: option.height + 'p · ' + author + ' · ' + (index + 1), label: author, subtitles: []})
+        }
       }
-      if (embed.streamUrl) entries.push(embed.streamUrl)
-      if (embed.videoUrl) entries.push(embed.videoUrl)
-      for (const entry of entries) {
-        const url = typeof entry === 'string' ? entry : (entry.url || entry.src || entry.href || '')
-        if (typeof url !== 'string' || !/^https:\/\//.test(url)) continue
-        const clean = url.split('?')[0].toLowerCase()
-        if (!clean.endsWith('.mp4') && !clean.endsWith('.m3u8')) continue
-        const type = clean.endsWith('.m3u8') ? 'm3u8' : 'mp4'
-        const quality = (typeof entry === 'object' && (entry.quality || entry.label)) || 'auto'
-        sources.push({url, type, quality: String(quality) + ' · ' + author, label: author, subtitles: []})
+      for (const option of Array.isArray(embed.download) ? embed.download : []) {
+        if (typeof option.url !== 'string' || !/^https:\/\//.test(option.url)) continue
+        sources.push({url: option.url, type: 'mp4', quality: option.height + 'p · ' + author + ' · download', label: author, subtitles: []})
       }
     }
     if (!sources.length) throw new Error('Anime365 returned no compatible direct MP4/HLS links. The embed response needs mapping; see README.')

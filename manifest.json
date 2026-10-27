@@ -1,12 +1,13 @@
 {
-  "id": "anime365-experimental",
-  "name": "Anime365 (RU) - Experimental",
-  "version": "0.1.1",
+  "id": "anime365",
+  "name": "Anime365",
+  "version": "0.1.3",
+  "icon": "https://smotret-anime.app/apple-touch-icon.png",
   "manifestURI": "https://raw.githubusercontent.com/anivire/seanime-anime365/main/manifest.json",
   "language": "typescript",
   "type": "onlinestream-provider",
-  "description": "Experimental Anime365 online streaming provider for Seanime; requires an authorized subscription token.",
-  "author": "Community prototype",
+  "description": "Anime365 online streaming provider for Seanime; requires an authorized subscription token.",
+  "author": "anivire",
   "website": "https://smotret-anime.app/",
   "lang": "ru",
   "payloadURI": "https://raw.githubusercontent.com/anivire/seanime-anime365/main/provider.ts",
@@ -16,7 +17,7 @@
     "fields": [
       {
         "name": "apiToken",
-        "label": "Anime365 API Token",
+        "label": "Access Token",
         "type": "text",
         "default": ""
       }
